@@ -1,0 +1,58 @@
+[
+  {
+    "text": "No hiding from dinosaur rampaging halfway across the globe?",
+    "answer": "RADIUS",
+    "answerEnumeration": [6],
+    "authorDifficulty": 2,
+    "spans": [
+      {
+        "type": "INDICATOR",
+        "startIndex": 3,
+        "endIndex": 14
+      },
+      {
+        "type": "INDICATOR",
+        "startIndex": 24,
+        "endIndex": 33
+      },
+      {
+        "type": "FODDER",
+        "startIndex": 0,
+        "endIndex": 2
+      },
+      {
+        "type": "FODDER",
+        "startIndex": 15,
+        "endIndex": 23
+      },
+      {
+        "type": "DEFINITION",
+        "startIndex": 34,
+        "endIndex": 59
+      }
+    ]
+  },
+  {
+    "text": "Ref saw tooth knocked out? Red card!",
+    "answer": "TWO OF HEARTS",
+    "answerEnumeration": [3, 2, 6],
+    "authorDifficulty": 2,
+    "spans": [
+      {
+        "type": "INDICATOR",
+        "startIndex": 14,
+        "endIndex": 26
+      },
+      {
+        "type": "FODDER",
+        "startIndex": 0,
+        "endIndex": 13
+      },
+      {
+        "type": "DEFINITION",
+        "startIndex": 27,
+        "endIndex": 36
+      }
+    ]
+  }
+]

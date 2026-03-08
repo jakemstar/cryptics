@@ -20,7 +20,9 @@ export default function HomePage() {
       <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col px-6 py-6 sm:px-8">
         <section className="flex flex-1 flex-col items-center justify-center gap-8 text-center">
           <div className="space-y-3">
-            <h1 className="text-5xl font-bold tracking-tight sm:text-6xl">Cryptics</h1>
+            <h1 className="text-5xl font-bold tracking-tight sm:text-6xl">
+              Cryptics
+            </h1>
             <p className="text-base text-(--color-muted) sm:text-lg">
               Crack clues, sharpen your wits, and play cryptic crosswords.
             </p>
@@ -43,4 +45,3 @@ export default function HomePage() {
     </main>
   );
 }
-
