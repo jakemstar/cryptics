@@ -11,34 +11,88 @@ generator client {
 // https://www.prisma.io/docs/reference/api-reference/prisma-schema-reference#string
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
-model Post {
-  id        String   @id @default(cuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+enum ClueSpanType {
+  DEFINITION
+  INDICATOR
+  FODDER
+}
 
-  createdBy   User   @relation(fields: [createdById], references: [id])
-  createdById String
+model Clue {
+  id               String               @id @default(cuid())
+  text             String
+  answer           String
+  answerEnumeration Int[]
+  authorDifficulty Int
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  spans            ClueSpan[]
+  progresses       UserClueProgress[]
+  difficultyVotes  ClueDifficultyVote[]
 
-  @@index([name])
+  @@index([authorDifficulty])
+}
+
+model ClueSpan {
+  id         String       @id @default(cuid())
+  clueId     String
+  type       ClueSpanType
+  startIndex Int
+  endIndex   Int
+  clue       Clue         @relation(fields: [clueId], references: [id], onDelete: Cascade)
+
+  @@index([clueId])
+  @@index([clueId, type])
+}
+
+model UserClueProgress {
+  id                 String   @id @default(cuid())
+  userId             String
+  clueId             String
+  isSolved           Boolean  @default(false)
+  solvedAt           DateTime?
+  hintsUsedCount     Int      @default(0)
+  lastAttemptAt      DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clue               Clue     @relation(fields: [clueId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clueId])
+  @@index([userId, isSolved])
+  @@index([clueId])
+}
+
+model ClueDifficultyVote {
+  id         String   @id @default(cuid())
+  userId     String
+  clueId     String
+  difficulty Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clue       Clue     @relation(fields: [clueId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clueId])
+  @@index([clueId])
 }
 
 model User {
-  id            String    @id
-  name          String //@db.Text
-  email         String
-  emailVerified Boolean   @default(false)
-  image         String? //@db.Text
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @default(now()) @updatedAt
-  sessions      Session[]
-  accounts      Account[]
-  posts         Post[]
+  id                  String               @id
+  name                String //@db.Text
+  email               String
+  emailVerified       Boolean              @default(false)
+  image               String? //@db.Text
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @default(now()) @updatedAt
+  sessions            Session[]
+  accounts            Account[]
+  clueProgresses      UserClueProgress[]
+  clueDifficultyVotes ClueDifficultyVote[]
 
   @@unique([email])
   @@map("user")
@@ -88,3 +142,8 @@ model Verification {
 
   @@map("verification")
 }
+
+
+
+
+
