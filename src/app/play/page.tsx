@@ -9,7 +9,7 @@ type SearchParamsShape = {
 };
 
 type PlayPageProps = {
-  searchParams?: SearchParamsShape | Promise<SearchParamsShape>;
+  searchParams?: Promise<SearchParamsShape>;
 };
 
 function PlayClueFallback() {
@@ -34,15 +34,13 @@ async function PlayClueCard({ excludeClueId }: { excludeClueId?: string }) {
     />
   ) : (
     <div className="min-h-28 rounded-xl border border-(--color-border) bg-(--color-surface) p-12 shadow-sm">
-      <p className="text-2xl text-(--color-muted)">
-        No clues available right now.
-      </p>
+      <p className="text-2xl text-(--color-muted)">No clues available right now.</p>
     </div>
   );
 }
 
 export default async function PlayPage({ searchParams }: PlayPageProps) {
-  const params = searchParams ? await Promise.resolve(searchParams) : undefined;
+  const params = searchParams ? await searchParams : undefined;
   const excludeClueId = params?.exclude;
 
   return (
