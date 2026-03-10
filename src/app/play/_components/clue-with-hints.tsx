@@ -13,19 +13,17 @@ import { api } from "~/trpc/react";
 
 type SpanType = "INDICATOR" | "DEFINITION" | "FODDER";
 
-type ClueSpan = {
-  id: string;
-  clueId: string;
-  type: SpanType;
-  startIndex: number;
-  endIndex: number;
+type ClueSpans = {
+  indicator: number[];
+  fodder: number[];
+  definition: number[];
 };
 
 type Props = {
   clueId: string;
   text: string;
   answerEnumeration: number[];
-  spans: ClueSpan[];
+  spans: ClueSpans;
 };
 
 type RevealedMap = Record<SpanType, boolean>;
@@ -33,6 +31,11 @@ type RevealedMap = Record<SpanType, boolean>;
 type Segment = {
   text: string;
   type: SpanType | null;
+};
+
+type Token = {
+  text: string;
+  isWord: boolean;
 };
 
 const TYPE_STYLES: Record<SpanType, string> = {
@@ -46,47 +49,79 @@ const TYPE_STYLES: Record<SpanType, string> = {
 const formatEnumeration = (enumeration: number[]) =>
   `(${enumeration.join(",")})`;
 
-const getSpanTypeAtIndex = (
-  index: number,
-  spans: ClueSpan[],
-): SpanType | null => {
-  for (const span of spans) {
-    if (index >= span.startIndex && index < span.endIndex) {
-      return span.type;
-    }
-  }
+const tokenizeClueText = (text: string): Token[] =>
+  text
+    .split(/(\s+)/)
+    .filter((token) => token.length > 0)
+    .map((token) => ({ text: token, isWord: /\S+/.test(token) }));
 
+const getSpanTypeAtWordIndex = (
+  wordIndex: number,
+  spans: ClueSpans,
+): SpanType | null => {
+  if (spans.indicator.includes(wordIndex)) return "INDICATOR";
+  if (spans.fodder.includes(wordIndex)) return "FODDER";
+  if (spans.definition.includes(wordIndex)) return "DEFINITION";
   return null;
 };
 
-const buildSegments = (text: string, spans: ClueSpan[]): Segment[] => {
+const buildSegments = (text: string, spans: ClueSpans): Segment[] => {
   if (!text.length) return [];
 
+  const tokens = tokenizeClueText(text);
+  if (!tokens.length) return [];
+
   const segments: Segment[] = [];
-  let segmentStart = 0;
-  let currentType = getSpanTypeAtIndex(0, spans);
+  let currentWordIndex = 0;
+  let currentType: SpanType | null = null;
+  let currentText = "";
 
-  for (let i = 1; i < text.length; i += 1) {
-    const nextType = getSpanTypeAtIndex(i, spans);
-    if (nextType === currentType) continue;
+  const totalWords = tokens.filter((token) => token.isWord).length;
 
-    segments.push({
-      text: text.slice(segmentStart, i),
-      type: currentType,
-    });
+  for (const token of tokens) {
+    const tokenType: SpanType | null = token.isWord
+      ? getSpanTypeAtWordIndex(currentWordIndex, spans)
+      : (() => {
+          const previousWordIndex = currentWordIndex - 1;
+          const nextWordIndex = currentWordIndex;
+          const previousType =
+            previousWordIndex >= 0
+              ? getSpanTypeAtWordIndex(previousWordIndex, spans)
+              : null;
+          const nextType =
+            nextWordIndex < totalWords
+              ? getSpanTypeAtWordIndex(nextWordIndex, spans)
+              : null;
 
-    segmentStart = i;
-    currentType = nextType;
+          return previousType && previousType === nextType
+            ? previousType
+            : null;
+        })();
+
+    if (token.isWord) {
+      currentWordIndex += 1;
+    }
+
+    if (!currentText.length) {
+      currentType = tokenType;
+      currentText = token.text;
+      continue;
+    }
+
+    if (tokenType === currentType) {
+      currentText += token.text;
+      continue;
+    }
+
+    segments.push({ text: currentText, type: currentType });
+    currentType = tokenType;
+    currentText = token.text;
   }
 
-  segments.push({
-    text: text.slice(segmentStart),
-    type: currentType,
-  });
+  segments.push({ text: currentText, type: currentType });
 
   return segments;
 };
-
 const isTextTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName.toLowerCase();
@@ -126,6 +161,12 @@ export function ClueWithHints({
   const hasEmptyBoxes = guessLetters.some((letter) => !letter);
 
   useEffect(() => {
+    setMenuOpen(false);
+    setRevealed({
+      INDICATOR: false,
+      DEFINITION: false,
+      FODDER: false,
+    });
     setGuessLetters(Array.from({ length: totalLetters }, () => ""));
     setActiveIndex(0);
     setIsSolved(false);

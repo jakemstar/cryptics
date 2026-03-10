@@ -9,10 +9,10 @@ import { z } from "zod";
 const MIN_DIFFICULTY = 1;
 const MAX_DIFFICULTY = 10;
 
-const spanSchema = z.object({
-  type: z.enum(["DEFINITION", "INDICATOR", "FODDER"]),
-  startIndex: z.number().int().min(0),
-  endIndex: z.number().int().min(0),
+const spanIndexesSchema = z.object({
+  indicator: z.array(z.number().int().min(0)).default([]),
+  fodder: z.array(z.number().int().min(0)).default([]),
+  definition: z.array(z.number().int().min(0)).default([]),
 });
 
 const clueSchema = z.object({
@@ -20,7 +20,11 @@ const clueSchema = z.object({
   answer: z.string().min(1),
   answerEnumeration: z.array(z.number().int().positive()).optional(),
   authorDifficulty: z.number().int().min(MIN_DIFFICULTY).max(MAX_DIFFICULTY),
-  spans: z.array(spanSchema).default([]),
+  spans: spanIndexesSchema.default({
+    indicator: [],
+    fodder: [],
+    definition: [],
+  }),
 });
 
 const cluesFileSchema = z.array(clueSchema);
@@ -32,6 +36,17 @@ const answerEnumerationFromNormalizedAnswer = (answer) =>
     .map((segment) => segment.length)
     .filter((length) => length > 0);
 const answerLetterCount = (enumeration) => enumeration.reduce((sum, part) => sum + part, 0);
+const wordCountFromText = (text) =>
+  text
+    .trim()
+    .split(/\s+/)
+    .filter((segment) => segment.length > 0).length;
+const normalizeIndexes = (indexes) => Array.from(new Set(indexes)).sort((a, b) => a - b);
+const normalizeSpans = (spans) => ({
+  indicator: normalizeIndexes(spans.indicator),
+  fodder: normalizeIndexes(spans.fodder),
+  definition: normalizeIndexes(spans.definition),
+});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,17 +61,14 @@ const getFileArg = () => {
 };
 
 const validateSpans = (text, spans, clueIndex) => {
-  for (const span of spans) {
-    if (span.endIndex <= span.startIndex) {
-      throw new Error(
-        `Clue ${clueIndex + 1}: span endIndex must be greater than startIndex for ${span.type}.`,
-      );
-    }
-
-    if (span.endIndex > text.length) {
-      throw new Error(
-        `Clue ${clueIndex + 1}: span range (${span.startIndex}-${span.endIndex}) exceeds clue text length ${text.length}.`,
-      );
+  const wordCount = wordCountFromText(text);
+  for (const [type, indexes] of Object.entries(spans)) {
+    for (const index of indexes) {
+      if (index >= wordCount) {
+        throw new Error(
+          `Clue ${clueIndex + 1}: ${type} index ${index} exceeds clue word count ${wordCount}.`,
+        );
+      }
     }
   }
 };
@@ -102,7 +114,8 @@ const main = async () => {
 
   for (let index = 0; index < parsed.length; index += 1) {
     const clue = parsed[index];
-    validateSpans(clue.text, clue.spans, index);
+    const spans = normalizeSpans(clue.spans);
+    validateSpans(clue.text, spans, index);
 
     const normalizedAnswer = normalizeAnswer(clue.answer);
     const answerEnumeration = resolveEnumeration(clue, normalizedAnswer, index);
@@ -117,28 +130,18 @@ const main = async () => {
     if (matchingIds.length === 1) {
       const clueId = matchingIds[0];
 
-      await prisma.$transaction([
-        prisma.clue.update({
-          where: { id: clueId },
-          data: {
-            text: clue.text,
-            answer: normalizedAnswer,
-            answerEnumeration,
-            authorDifficulty: clue.authorDifficulty,
-          },
-        }),
-        prisma.clueSpan.deleteMany({
-          where: { clueId },
-        }),
-        prisma.clueSpan.createMany({
-          data: clue.spans.map((span) => ({
-            clueId,
-            type: span.type,
-            startIndex: span.startIndex,
-            endIndex: span.endIndex,
-          })),
-        }),
-      ]);
+      await prisma.clue.update({
+        where: { id: clueId },
+        data: {
+          text: clue.text,
+          answer: normalizedAnswer,
+          answerEnumeration,
+          authorDifficulty: clue.authorDifficulty,
+          definitionIndices: spans.definition,
+          indicatorIndices: spans.indicator,
+          fodderIndices: spans.fodder,
+        },
+      });
 
       updatedCount += 1;
       continue;
@@ -150,13 +153,9 @@ const main = async () => {
         answer: normalizedAnswer,
         answerEnumeration,
         authorDifficulty: clue.authorDifficulty,
-        spans: {
-          create: clue.spans.map((span) => ({
-            type: span.type,
-            startIndex: span.startIndex,
-            endIndex: span.endIndex,
-          })),
-        },
+        definitionIndices: spans.definition,
+        indicatorIndices: spans.indicator,
+        fodderIndices: spans.fodder,
       },
       select: {
         id: true,

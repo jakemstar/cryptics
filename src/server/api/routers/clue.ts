@@ -13,14 +13,16 @@ const MIN_VOTES_FOR_BLEND = 1;
 const AUTHOR_DIFFICULTY_WEIGHT = 0.4;
 const COMMUNITY_DIFFICULTY_WEIGHT = 0.6;
 
-const clueSpanTypeSchema = z.enum(["DEFINITION", "INDICATOR", "FODDER"]);
+const clueSpansSchema = z.object({
+  indicator: z.array(z.number().int().min(0)),
+  fodder: z.array(z.number().int().min(0)),
+  definition: z.array(z.number().int().min(0)),
+});
 
-const clueSpanOutputSchema = z.object({
-  id: z.string(),
-  clueId: z.string(),
-  type: clueSpanTypeSchema,
-  startIndex: z.number().int(),
-  endIndex: z.number().int(),
+const clueSpanColumnsSchema = z.object({
+  definitionIndices: z.array(z.number().int().min(0)),
+  indicatorIndices: z.array(z.number().int().min(0)),
+  fodderIndices: z.array(z.number().int().min(0)),
 });
 
 const userClueProgressOutputSchema = z.object({
@@ -52,7 +54,20 @@ const createdClueOutputSchema = z.object({
   authorDifficulty: z.number().int().min(MIN_DIFFICULTY).max(MAX_DIFFICULTY),
   createdAt: z.date(),
   updatedAt: z.date(),
-  spans: z.array(clueSpanOutputSchema),
+  spans: clueSpansSchema,
+});
+
+const createdClueRowSchema = z.object({
+  id: z.string(),
+  text: z.string(),
+  answer: z.string(),
+  answerEnumeration: z.array(z.number().int().positive()),
+  authorDifficulty: z.number().int().min(MIN_DIFFICULTY).max(MAX_DIFFICULTY),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+  definitionIndices: z.array(z.number().int().min(0)),
+  indicatorIndices: z.array(z.number().int().min(0)),
+  fodderIndices: z.array(z.number().int().min(0)),
 });
 
 const nextClueOutputSchema = z.object({
@@ -62,7 +77,7 @@ const nextClueOutputSchema = z.object({
   authorDifficulty: z.number().int().min(MIN_DIFFICULTY).max(MAX_DIFFICULTY),
   effectiveDifficulty: z.number(),
   voteCount: z.number().int(),
-  spans: z.array(clueSpanOutputSchema),
+  spans: clueSpansSchema,
 });
 
 const revealLetterOutputSchema = z.object({
@@ -84,7 +99,9 @@ const candidateClueSchema = z.object({
   text: z.string(),
   answerEnumeration: z.array(z.number().int().positive()),
   authorDifficulty: z.number().int(),
-  spans: z.array(clueSpanOutputSchema),
+  definitionIndices: z.array(z.number().int().min(0)),
+  indicatorIndices: z.array(z.number().int().min(0)),
+  fodderIndices: z.array(z.number().int().min(0)),
   difficultyVotes: z.array(difficultyVoteRowSchema),
 });
 const candidateCluesSchema = z.array(candidateClueSchema);
@@ -109,6 +126,41 @@ const answerEnumerationFromNormalizedAnswer = (answer: string) =>
 
 const answerLetterCount = (enumeration: number[]) =>
   enumeration.reduce((sum, part) => sum + part, 0);
+
+const wordCountFromText = (text: string) =>
+  text
+    .trim()
+    .split(/\s+/)
+    .filter((segment) => segment.length > 0).length;
+
+const normalizeSpanIndexes = (spans: z.infer<typeof clueSpansSchema>) => ({
+  indicator: Array.from(new Set(spans.indicator)).sort((a, b) => a - b),
+  fodder: Array.from(new Set(spans.fodder)).sort((a, b) => a - b),
+  definition: Array.from(new Set(spans.definition)).sort((a, b) => a - b),
+});
+
+const spansFromColumns = (columns: z.infer<typeof clueSpanColumnsSchema>) =>
+  normalizeSpanIndexes({
+    definition: columns.definitionIndices,
+    indicator: columns.indicatorIndices,
+    fodder: columns.fodderIndices,
+  });
+
+const validateSpanIndexes = (
+  spans: z.infer<typeof clueSpansSchema>,
+  wordCount: number,
+) => {
+  for (const [type, indexes] of Object.entries(spans)) {
+    for (const index of indexes) {
+      if (index >= wordCount) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `${type} span index ${index} is out of bounds for ${wordCount} words`,
+        });
+      }
+    }
+  }
+};
 
 const computeEffectiveDifficulty = (
   authorDifficulty: number,
@@ -165,15 +217,11 @@ const createClueInput = z.object({
   answer: z.string().min(1),
   answerEnumeration: z.array(z.number().int().positive()).optional(),
   authorDifficulty: z.number().int().min(MIN_DIFFICULTY).max(MAX_DIFFICULTY),
-  spans: z
-    .array(
-      z.object({
-        type: clueSpanTypeSchema,
-        startIndex: z.number().int().min(0),
-        endIndex: z.number().int().min(0),
-      }),
-    )
-    .default([]),
+  spans: clueSpansSchema.default({
+    indicator: [],
+    fodder: [],
+    definition: [],
+  }),
 });
 
 const userProgressSelect = {
@@ -192,22 +240,9 @@ export const clueRouter = createTRPCRouter({
   create: protectedProcedure
     .input(createClueInput)
     .mutation(async ({ ctx, input }) => {
-      const textLength = input.text.length;
-      for (const span of input.spans) {
-        if (span.endIndex <= span.startIndex) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Each span must have endIndex > startIndex",
-          });
-        }
-
-        if (span.endIndex > textLength) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Span indexes must be within clue text bounds",
-          });
-        }
-      }
+      const textWordCount = wordCountFromText(input.text);
+      const normalizedSpans = normalizeSpanIndexes(input.spans);
+      validateSpanIndexes(normalizedSpans, textWordCount);
 
       const normalizedAnswer = normalizeAnswer(input.answer);
       const computedEnumeration =
@@ -231,9 +266,9 @@ export const clueRouter = createTRPCRouter({
           answer: normalizedAnswer,
           answerEnumeration,
           authorDifficulty: input.authorDifficulty,
-          spans: {
-            create: input.spans,
-          },
+          definitionIndices: normalizedSpans.definition,
+          indicatorIndices: normalizedSpans.indicator,
+          fodderIndices: normalizedSpans.fodder,
         },
         select: {
           id: true,
@@ -243,19 +278,18 @@ export const clueRouter = createTRPCRouter({
           authorDifficulty: true,
           createdAt: true,
           updatedAt: true,
-          spans: {
-            select: {
-              id: true,
-              clueId: true,
-              type: true,
-              startIndex: true,
-              endIndex: true,
-            },
-          },
+          definitionIndices: true,
+          indicatorIndices: true,
+          fodderIndices: true,
         },
       });
 
-      return createdClueOutputSchema.parse(createdRaw);
+      const created = createdClueRowSchema.parse(createdRaw);
+
+      return createdClueOutputSchema.parse({
+        ...created,
+        spans: spansFromColumns(created),
+      });
     }),
 
   next: publicProcedure
@@ -297,18 +331,9 @@ export const clueRouter = createTRPCRouter({
           text: true,
           answerEnumeration: true,
           authorDifficulty: true,
-          spans: {
-            orderBy: {
-              startIndex: "asc",
-            },
-            select: {
-              id: true,
-              clueId: true,
-              type: true,
-              startIndex: true,
-              endIndex: true,
-            },
-          },
+          definitionIndices: true,
+          indicatorIndices: true,
+          fodderIndices: true,
           difficultyVotes: {
             select: {
               difficulty: true,
@@ -333,7 +358,7 @@ export const clueRouter = createTRPCRouter({
           authorDifficulty: clue.authorDifficulty,
           effectiveDifficulty,
           voteCount: votes.length,
-          spans: clue.spans,
+          spans: spansFromColumns(clue),
         };
       });
 
