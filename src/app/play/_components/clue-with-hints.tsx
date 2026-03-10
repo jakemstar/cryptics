@@ -336,11 +336,6 @@ export function ClueWithHints({
       </p>
 
       <form className="mt-8 flex flex-col gap-4" onSubmit={handleSubmit}>
-        <p className="text-sm font-semibold text-(--color-muted)">
-          Type anywhere to enter your guess. Press Enter to check, Backspace to
-          delete. You can also click any box to type from that position.
-        </p>
-
         <div
           className={`flex flex-wrap items-center justify-center gap-4 ${isShaking ? "animate-[clue-shake_360ms_ease-in-out]" : ""}`}
         >
