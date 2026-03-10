@@ -34,7 +34,9 @@ async function PlayClueCard({ excludeClueId }: { excludeClueId?: string }) {
     />
   ) : (
     <div className="min-h-28 rounded-xl border border-(--color-border) bg-(--color-surface) p-12 shadow-sm">
-      <p className="text-2xl text-(--color-muted)">No clues available right now.</p>
+      <p className="text-2xl text-(--color-muted)">
+        No clues available right now.
+      </p>
     </div>
   );
 }
