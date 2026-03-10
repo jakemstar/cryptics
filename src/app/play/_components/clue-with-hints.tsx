@@ -10,6 +10,7 @@ import {
 import { useRouter } from "next/navigation";
 
 import { api } from "~/trpc/react";
+import { OnScreenKeyboard } from "~/app/play/_components/on-screen-keyboard";
 
 type SpanType = "INDICATOR" | "DEFINITION" | "FODDER";
 
@@ -40,10 +41,10 @@ type Token = {
 
 const TYPE_STYLES: Record<SpanType, string> = {
   INDICATOR:
-    "bg-amber-200/80 text-amber-950 dark:bg-amber-300/30 dark:text-amber-100",
-  DEFINITION: "bg-sky-200/80 text-sky-950 dark:bg-sky-300/30 dark:text-sky-100",
+    "bg-amber-200/80 text-amber-950 dark:bg-amber-200/70 dark:text-amber-950",
+  DEFINITION: "bg-sky-200/80 text-sky-950 dark:bg-sky-200/70 dark:text-sky-950",
   FODDER:
-    "bg-emerald-200/80 text-emerald-950 dark:bg-emerald-300/30 dark:text-emerald-100",
+    "bg-emerald-200/80 text-emerald-950 dark:bg-emerald-200/70 dark:text-emerald-950",
 };
 
 const formatEnumeration = (enumeration: number[]) =>
@@ -122,6 +123,7 @@ const buildSegments = (text: string, spans: ClueSpans): Segment[] => {
 
   return segments;
 };
+
 const isTextTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName.toLowerCase();
@@ -159,6 +161,7 @@ export function ClueWithHints({
 
   const segments = useMemo(() => buildSegments(text, spans), [text, spans]);
   const hasEmptyBoxes = guessLetters.some((letter) => !letter);
+  const inputDisabled = isSolved || submitGuess.isPending;
 
   useEffect(() => {
     setMenuOpen(false);
@@ -216,43 +219,32 @@ export function ClueWithHints({
     await submitCurrentGuess();
   };
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (isSolved || submitGuess.isPending) return;
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (isTextTarget(event.target)) return;
+  const handleBackspace = useCallback(() => {
+    if (inputDisabled) return;
 
-      if (event.key === "Backspace") {
-        event.preventDefault();
-        setGuessLetters((current) => {
-          const next = [...current];
+    setGuessLetters((current) => {
+      const next = [...current];
 
-          if (next[activeIndex]) {
-            next[activeIndex] = "";
-            return next;
-          }
-
-          if (activeIndex > 0) {
-            const previous = activeIndex - 1;
-            next[previous] = "";
-            setActiveIndex(previous);
-          }
-
-          return next;
-        });
-        return;
+      if (next[activeIndex]) {
+        next[activeIndex] = "";
+        return next;
       }
 
-      if (event.key === "Enter") {
-        event.preventDefault();
-        void submitCurrentGuess();
-        return;
+      if (activeIndex > 0) {
+        const previous = activeIndex - 1;
+        next[previous] = "";
+        setActiveIndex(previous);
       }
 
-      if (!/^[a-zA-Z]$/.test(event.key)) return;
+      return next;
+    });
+  }, [activeIndex, inputDisabled]);
 
-      event.preventDefault();
-      const letter = event.key.toUpperCase();
+  const handleLetterInput = useCallback(
+    (letter: string) => {
+      if (inputDisabled) return;
+      if (!/^[A-Z]$/.test(letter)) return;
+
       setGuessLetters((current) => {
         const next = [...current];
         next[activeIndex] = letter;
@@ -260,15 +252,45 @@ export function ClueWithHints({
         setActiveIndex(nextIndex);
         return next;
       });
+    },
+    [activeIndex, inputDisabled],
+  );
+
+  const handleEnter = useCallback(() => {
+    if (inputDisabled) return;
+    void submitCurrentGuess();
+  }, [inputDisabled, submitCurrentGuess]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isTextTarget(event.target)) return;
+
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        handleBackspace();
+        return;
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        handleEnter();
+        return;
+      }
+
+      if (!/^[a-zA-Z]$/.test(event.key)) return;
+
+      event.preventDefault();
+      handleLetterInput(event.key.toUpperCase());
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeIndex, isSolved, submitCurrentGuess, submitGuess.isPending]);
+  }, [handleBackspace, handleEnter, handleLetterInput]);
 
   return (
     <div className="relative min-h-28 rounded-xl border border-(--color-border) bg-(--color-surface) p-12 shadow-sm">
-      <div className="absolute top-6 right-6">
+      <div className="absolute top-2 right-2">
         <button
           className="rounded-md border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm font-semibold text-(--color-text) transition-colors duration-150 hover:bg-(--color-surface-hover)"
           onClick={() => setMenuOpen((open) => !open)}
@@ -281,21 +303,21 @@ export function ClueWithHints({
           <div className="absolute right-0 mt-2 w-56 rounded-lg border border-(--color-border) bg-(--color-surface) p-3 shadow-lg">
             <div className="flex flex-col gap-2">
               <button
-                className="rounded-md bg-amber-200/80 px-3 py-2 text-left text-sm font-semibold text-amber-950 transition-opacity hover:opacity-90 dark:bg-amber-300/30 dark:text-amber-100"
+                className="rounded-md bg-amber-200/80 px-3 py-2 text-left text-sm font-semibold text-amber-950 transition-opacity hover:opacity-90 dark:bg-amber-200/70 dark:text-amber-950"
                 onClick={() => setRevealOn("INDICATOR")}
                 type="button"
               >
                 Reveal indicators
               </button>
               <button
-                className="rounded-md bg-sky-200/80 px-3 py-2 text-left text-sm font-semibold text-sky-950 transition-opacity hover:opacity-90 dark:bg-sky-300/30 dark:text-sky-100"
+                className="rounded-md bg-sky-200/80 px-3 py-2 text-left text-sm font-semibold text-sky-950 transition-opacity hover:opacity-90 dark:bg-sky-200/70 dark:text-sky-950"
                 onClick={() => setRevealOn("DEFINITION")}
                 type="button"
               >
                 Reveal definition
               </button>
               <button
-                className="rounded-md bg-emerald-200/80 px-3 py-2 text-left text-sm font-semibold text-emerald-950 transition-opacity hover:opacity-90 dark:bg-emerald-300/30 dark:text-emerald-100"
+                className="rounded-md bg-emerald-200/80 px-3 py-2 text-left text-sm font-semibold text-emerald-950 transition-opacity hover:opacity-90 dark:bg-emerald-200/70 dark:text-emerald-950"
                 onClick={() => setRevealOn("FODDER")}
                 type="button"
               >
@@ -313,7 +335,7 @@ export function ClueWithHints({
         ) : null}
       </div>
 
-      <p className="pr-28 text-2xl leading-relaxed">
+      <p className="text-2xl leading-relaxed">
         {segments.map((segment, index) => {
           if (!segment.type) {
             return <span key={`${index}-plain`}>{segment.text}</span>;
@@ -412,6 +434,11 @@ export function ClueWithHints({
           </button>
         )}
       </form>
+      <OnScreenKeyboard
+        disabled={inputDisabled}
+        onBackspace={handleBackspace}
+        onLetter={handleLetterInput}
+      />
     </div>
   );
 }
